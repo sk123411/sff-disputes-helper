@@ -302,6 +302,7 @@
           <option value="incorrect_refund">I was charged incorrect customer refund</option>
           <option value="sent_replacement">I sent the customer a replacement</option>
           <option value="incorrect_return_reason">Customer used an incorrect return reason</option>
+          <option value="cc_should_not_refund">Customer Care should not have authorized the refund</option>
           <option value="something_not_listed">Something not listed</option>
         </select>
         <p class="hint" id="categoryHint"></p>
@@ -357,7 +358,13 @@
             <option value="No">No</option>
           </select>
           <label>Return reason found in Seller Center (only needed for the line below)</label>
-          <input type="text" id="categoryUpdateFoundReason" placeholder="e.g. lost in transit, return to sender">
+          <select id="categoryUpdateFoundReason">
+            <option value="">— select —</option>
+            <option value="lost after delivery">Lost after delivery</option>
+            <option value="lost in transit">Lost in transit</option>
+            <option value="return to sender">Return to sender</option>
+            <option value="other">Other</option>
+          </select>
           <label style="display:flex; align-items:center; gap:9px; margin-top:12px; cursor:pointer;">
             <input type="checkbox" id="categoryUpdateUseReturnRefundLine" style="width:auto; accent-color:var(--amber); cursor:pointer;">
             <span style="color:var(--ink); font-size:13px;">Use the "Return &amp; Refunds tab" line (mentions the return reason) instead of the generic "case details" line</span>
@@ -394,8 +401,22 @@ const FIELD_SETS = {
         <select id="f_deliveredBackToSeller">
           <option value="">Not sure / no data</option>
           <option value="Yes">Yes — tracking shows delivered to return address</option>
+          <option value="DifferentAddress">No — return delivered to different return address</option>
           <option value="No">No</option>
         </select>
+        <label style="display:flex; align-items:center; gap:9px; margin-top:12px; cursor:pointer;">
+          <input type="checkbox" id="f_orderValueUnder100" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Order value is less than $100 (only used for the "delivered to different address" scenario)</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:9px; margin-top:12px; cursor:pointer;">
+          <input type="checkbox" id="f_overrideFileChecked" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Checked return override file</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:9px; margin-top:12px; cursor:pointer;">
+          <input type="checkbox" id="f_itemRestrictedForReturn" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Item is restricted for return</span>
+        </label>
+        <p class="hint">Only applies to the "delivered to seller address" and "delivered to different address" scenarios above.</p>
         <label>Is the return still in transit?</label>
         <select id="f_inTransit">
           <option value="">Not sure / no data</option>
@@ -442,16 +463,32 @@ const FIELD_SETS = {
           <option value="Yes">Yes</option>
           <option value="No">No</option>
         </select>
+        <label style="display:flex; align-items:center; gap:9px; margin-top:12px; cursor:pointer;">
+          <input type="checkbox" id="f_podAvailable" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Is POD available</span>
+        </label>
+        <p class="hint">Check this to request POD from the seller — sends the POD-request email instead of the normal approve/reject outcome.</p>
+        <label style="display:flex; align-items:center; gap:9px; margin-top:12px; cursor:pointer;">
+          <input type="checkbox" id="f_lostInTransit" onchange="toggleLostInTransitDate()" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Is item lost in transit</span>
+        </label>
+        <div id="lostInTransitDateBox" style="display:none;">
+          <label>Last tracking update date</label>
+          <input type="date" id="f_lostInTransitDate">
+        </div>
       </fieldset>`
   },
   unsellable: {
-    hint: "Use this for damaged / unsellable-condition claims. Approvals can be partial (discount %) or need supporting images.",
+    hint: "Use this for damaged / unsellable-condition claims. Approvals can be partial (discount %) or need specific supporting documentation.",
     fields: `
       <fieldset><legend>Review outcome</legend>
-        <label>Do you still need images of the item and the Return Shipping Label (RSL) from the seller?</label>
+        <label>What's missing to validate this claim?</label>
         <select id="f_needInfo">
-          <option value="No">No — already have what's needed</option>
-          <option value="Yes">Yes — images or RSL missing/blurred</option>
+          <option value="No">Nothing — already have what's needed (proceed to approval)</option>
+          <option value="rsl_only">RSL only — shipping label incomplete/unclear</option>
+          <option value="damaged_used_item">Damaged/used item images</option>
+          <option value="original_packaging">Original packaging damaged/missing images</option>
+          <option value="both">Images and RSL both</option>
         </select>
         <label>Approved discount / reimbursement percentage</label>
         <input type="number" id="f_discount" placeholder="e.g. 20, 50, 100" min="0" max="100">
@@ -526,12 +563,37 @@ const FIELD_SETS = {
         </select>
       </fieldset>`
   },
+  cc_should_not_refund: {
+    hint: "Use this when Customer Care authorized a refund that shouldn't have been approved. This is an approve-only scenario for the seller's reimbursement.",
+    fields: `
+      <fieldset><legend>Review notes</legend>
+        <label style="display:flex; align-items:center; gap:9px; cursor:pointer;">
+          <input type="checkbox" id="f_ccOverrideFileChecked" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Checked return override file</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:9px; margin-top:12px; cursor:pointer;">
+          <input type="checkbox" id="f_ccItemRestricted" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Item is restricted for return</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:9px; margin-top:12px; cursor:pointer;">
+          <input type="checkbox" id="f_ccQualityResponse" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Seller provided quality response</span>
+        </label>
+      </fieldset>`
+  },
+
   something_not_listed: {
     hint: "Use this to recategorize a case. This is an internal touch only — no customer email is sent for a category update.",
     fields: `
       <fieldset><legend>Recategorization</legend>
         <label>Return reason found in Seller Center</label>
-        <input type="text" id="f_foundReason" placeholder="e.g. lost in transit, return to sender">
+        <select id="f_foundReason">
+          <option value="">— select —</option>
+          <option value="lost after delivery">Lost after delivery</option>
+          <option value="lost in transit">Lost in transit</option>
+          <option value="return to sender">Return to sender</option>
+          <option value="other">Other</option>
+        </select>
         <label>Category the case should be updated to</label>
         <select id="f_newCategory">
           <option value="The item was delivered to the customer">The item was delivered to the customer</option>
@@ -553,6 +615,12 @@ const FIELD_SETS = {
 };
 
 // ---------- return window auto-calculation ----------
+function formatTodayLong(){
+  const d = new Date();
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function daysBetween(deliverDateStr, requestDateStr){
   if(!deliverDateStr || !requestDateStr) return null;
   const d1 = new Date(deliverDateStr+'T00:00:00');
@@ -583,6 +651,12 @@ function calcWindow(){
     ? `Calculated: ${diff} days since delivery — that's ${diff - windowDays} day(s) past the ${windowDays}-day window → Outside the window.`
     : `Calculated: ${diff} days since delivery, within the ${windowDays}-day window → Within the window.`;
   el.style.color = outside ? 'var(--red)' : 'var(--teal)';
+}
+
+function toggleLostInTransitDate(){
+  const box = document.getElementById('lostInTransitDateBox');
+  if(!box) return;
+  box.style.display = document.getElementById('f_lostInTransit').checked ? 'block' : 'none';
 }
 
 function toggleCategoryUpdate(){
@@ -660,13 +734,55 @@ function generate(){
     const returnAddress = ph(val('f_returnAddress'), '*(return address)');
     const lastUpdate = ph(fmtDate(val('f_lastUpdate')), '*(last update)');
     const expected = ph(fmtDate(val('f_expectedDelivery')), '*(expected delivery date)');
+    const overrideChecked = document.getElementById('f_overrideFileChecked').checked;
+    const restricted = document.getElementById('f_itemRestrictedForReturn').checked;
+    const todayLong = formatTodayLong();
+    let overrideExtra = '';
+    let forceApprove = false;
+    if(overrideChecked){
+      overrideExtra = ` // reviewed return override file and current date is ${todayLong}`;
+      if(restricted){
+        overrideExtra += ` // Item is restricted for return`;
+        forceApprove = true;
+      } else {
+        overrideExtra += ` // Item not available/allowed for return exemption`;
+      }
+    }
 
     if(backToSeller === 'Yes'){
-      resolution = 'reject';
-      touch = touchNote('Seller reported that the return package was not delivered back.', orderId,
-        `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // tracking shows the item delivered to seller return address ${returnAddress} // hence rejected`,
-        'NA', 'Rejected');
-      email = `Hello ${sellerName},\n\nMy name is Shivam from Walmart Seller Support. I hope you're doing well. I'm happy to assist with resolving this issue.\n\nI comprehend your worry about the return. After examining order ${orderId}, I discovered that the tracking ${trackingNumber} indicates that the item has been delivered to ${returnAddress}. This location corresponds to the return center address you provided in the seller center. However, it would be advisable to get in touch with the warehouse to find out the whereabouts of the item. Regrettably, Walmart cannot provide a refund in this situation. I apologize for any inconvenience this may have caused.\n\nIf you have additional questions or are still experiencing any issues, please feel free to comment on the case, or respond to this email, and I'll be happy to assist further.\n\n${signBlock()}`;
+      if(forceApprove){
+        resolution = 'approved';
+        touch = touchNote('Seller reported that the return package was not delivered back.', orderId,
+          `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // tracking shows the item delivered to seller return address ${returnAddress}${overrideExtra}`,
+          'NA', 'Approved — claim eligible under policy');
+        email = approvedEmail(sellerName, orderId, amount);
+      } else {
+        resolution = 'reject';
+        const steps = `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // tracking shows the item delivered to seller return address ${returnAddress}${overrideExtra} // hence rejected`;
+        touch = touchNote('Seller reported that the return package was not delivered back.', orderId, steps, 'NA', 'Rejected');
+        email = `Hello ${sellerName},\n\nMy name is Shivam from Walmart Seller Support. I hope you're doing well. I'm happy to assist with resolving this issue.\n\nI comprehend your worry about the return. After examining order ${orderId}, I discovered that the tracking ${trackingNumber} indicates that the item has been delivered to ${returnAddress}. This location corresponds to the return center address you provided in the seller center. However, it would be advisable to get in touch with the warehouse to find out the whereabouts of the item. Regrettably, Walmart cannot provide a refund in this situation. I apologize for any inconvenience this may have caused.\n\nIf you have additional questions or are still experiencing any issues, please feel free to comment on the case, or respond to this email, and I'll be happy to assist further.\n\n${signBlock()}`;
+      }
+    } else if(backToSeller === 'DifferentAddress'){
+      if(forceApprove){
+        resolution = 'approved';
+        touch = touchNote('Seller reported that the return package was not delivered back.', orderId,
+          `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // tracking shows the item delivered to different return address ${returnAddress}${overrideExtra}`,
+          'NA', 'Approved — claim eligible under policy');
+        email = approvedEmail(sellerName, orderId, amount);
+      } else {
+        const under100 = document.getElementById('f_orderValueUnder100').checked;
+        if(under100){
+          resolution = 'reject';
+          const steps = `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // tracking shows the item delivered to different return address ${returnAddress} // order amount is less than $100${overrideExtra} // hence rejected`;
+          touch = touchNote('Seller reported that the return package was not delivered back.', orderId, steps, 'NA', 'Rejected');
+          email = `Hello ${sellerName},\n\nMy name is Shivam from Walmart Seller Support. I hope you are doing well. I am happy to assist you with this matter.\n\nI understand your concern regarding return order #${orderId}. Upon reviewing the case, I found that the return shipment associated with tracking number ${trackingNumber} was delivered to an incorrect address instead of your designated return address in ${returnAddress}.\n\nUnfortunately, we are unable to approve your reimbursement request because the order value is below $100. As per Walmart policy, for items valued under $100 that are lost, damaged in transit, or delivered to an incorrect address, sellers are required to file a claim directly with the carrier. Walmart Seller Support is unable to approve reimbursement requests for these scenarios.\n\nFor items valued over $100 that are lost, damaged in transit, or delivered to an incorrect address, reimbursement requests may be submitted to Walmart Seller Support for review.\n\nPlease note that if a claim submitted to the carrier is denied, Walmart is unable to appeal or dispute the carrier's decision. Therefore, we recommend contacting the carrier directly to initiate a claim regarding this shipment.\n\nI hope this information helps clarify the situation. If you have any additional questions or require further assistance, please reply to this email or comment on the case to keep it open, and I will be happy to assist you further.\n\nBest Regards,\nShivam\nWalmart Seller Support`;
+        } else {
+          resolution = 'approved';
+          const steps = `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // tracking shows the item delivered to different return address ${returnAddress} // order amount is greater than $100${overrideExtra} // validated eligibility based on policy guidelines`;
+          touch = touchNote('Seller reported that the return package was not delivered back.', orderId, steps, 'NA', 'Approved — claim eligible under policy');
+          email = approvedEmail(sellerName, orderId, amount);
+        }
+      }
     } else if(lost === 'Yes'){
       resolution = 'reject';
       touch = touchNote('Seller reported that the return package was not delivered back.', orderId,
@@ -676,9 +792,9 @@ function generate(){
     } else if(inTransit === 'Yes'){
       resolution = 'reject';
       touch = touchNote('Seller reported that the return package was not delivered back.', orderId,
-        `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // order is still in transit // last update on file, expected delivery ${expected} // order expected to reach seller return address // hence rejected`,
+        `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // order is still in transit // last tracking update on ${lastUpdate} (within 48 hours) // hence rejected`,
         'NA', 'Rejected');
-      email = `Hello ${sellerName},\n\nMy name is Shivam from Walmart Seller Support. I hope you're doing well. I'm happy to assist with resolving this issue.\n\nI comprehend your worry about the return. Upon reviewing the details, the tracking number ${trackingNumber} indicates that the return package is currently in transit to ${returnAddress}. This location is listed in your seller center. The latest update shows that the package is expected to arrive on ${expected}.\n\nSince the return shipment is still in transit to your address, we are unable to proceed with reimbursement at this stage.\n\nIf you have additional questions or are still experiencing any issues, please feel free to comment on the case, or respond to this email.\n\n${signBlock()}`;
+      email = `Hello ${sellerName},\n\nMy name is Shivam from Walmart Seller Support. I hope you're doing well. I'm happy to assist you with your concern.\n\nI understand your concern regarding the return shipment and appreciate your patience.\n\nUpon reviewing the case details, I found that the return tracking number ${trackingNumber} indicates that the package is still in transit to your return address. Additionally, the latest tracking update was recorded on ${lastUpdate} which is within the last 48 hours, confirming that the shipment is still actively moving through the carrier's network.\n\nAt this time, I kindly request that you wait for the return package to be delivered. Since the return shipment is still in transit and has not yet been delivered, we are unable to proceed with the reimbursement request at this time.\n\nIf the package is not delivered after a reasonable period or if the tracking stops updating, please reply to this email with the latest details, and we will be happy to review the case further.\n\nIf you have any additional questions or concerns, please feel free to reply to this email or comment on the case.\n\nWarm regards,\nShivam\nWalmart Seller Support`;
     } else {
       resolution = 'approved';
       touch = touchNote('Seller reported that the return package was not delivered back.', orderId,
@@ -692,8 +808,23 @@ function generate(){
     const delivered = val('f_deliveredToCustomer');
     const pod = val('f_podVerified');
     const reason = ph(val('f_returnReason'), '*(return reason)');
+    const podAvailable = document.getElementById('f_podAvailable').checked;
+    const lostInTransit = document.getElementById('f_lostInTransit').checked;
+    const lastUpdateDate = ph(fmtDate(val('f_lostInTransitDate')), '*(last tracking update date)');
 
-    if(delivered === 'No'){
+    if(podAvailable){
+      resolution = 'need info';
+      touch = touchNote('The item was delivered to the customer', orderId,
+        `Verified order details in Seller Center // Checked return reason (${reason}) and return status // checked attachments // no valid Proof of Delivery (POD) available // requested POD from seller`,
+        'Proof of Delivery (POD)', 'Need Info');
+      email = `Hello ${sellerName},\n\nThank you for contacting Walmart Seller Support. This is Shivam, and I'm here to assist you.\n\nUpon reviewing the details and attachments for order #${orderId}, I found that there is currently no valid Proof of Delivery (POD) available confirming that the customer received the item. Although the tracking number ${trackingNumber} indicates that the package was delivered to the customer's address, it was not signed for, and therefore we are unable to validate successful delivery.\n\nAs per Walmart's policy, we require one of the following valid PODs to proceed with further resolution:\n\n* Bill of Lading\n* Signature confirmation from the carrier\n* Photo evidence showing the parcel at the delivery location\n* Screenshot of communication where the customer confirms receipt of the item\n\nWe ask you to provide proof of delivery and you are unable to give that so we are sorry that we are not able to help you at this moment for the reimbursement.\n\nWe appreciate your cooperation and look forward to your response.\n\nWarm regards,\nShivam\nWalmart Seller Support`;
+    } else if(lostInTransit){
+      resolution = 'reject';
+      touch = touchNote('The item was delivered to the customer', orderId,
+        `Verified order details in Seller Center // Checked return reason (${reason}) and return status // Reviewed customer refund details under the Transactions tab // order is lost in transit // last tracking update on ${lastUpdateDate} // hence rejected`,
+        'NA', 'Rejected — lost in transit');
+      email = `Hello ${sellerName},\n\nThank you for reaching out to Walmart Seller Support. My name is Shivam, and I'm happy to assist you.\n\nI understand your concern regarding the shipment associated with tracking number ${trackingNumber}.\n\nUpon reviewing the tracking details, I found that the last tracking update was recorded on ${lastUpdateDate}. Since there have been no further tracking scans or movement after that date, the shipment is considered lost in transit.\n\nAs the order was never delivered to the customer and we are unable to verify successful delivery, we kindly request that you file a claim directly with the carrier for further investigation and any applicable reimbursement, as the carrier is best positioned to investigate shipments that are lost in transit.\n\nIf you have any additional questions or concerns regarding this matter, please reply to this email within five days before the case closes.\n\nWarm regards,\nShivam\nWalmart Seller Support`;
+    } else if(delivered === 'No'){
       resolution = 'reject';
       touch = touchNote('The item was delivered to the customer', orderId,
         `Verified order details in Seller Center // Checked return reason (${reason}) and return status // Reviewed customer refund details under the Transactions tab // order was never delivered to customer`,
@@ -712,18 +843,37 @@ function generate(){
   else if(cat === 'unsellable'){
     const needInfo = val('f_needInfo');
     const discount = val('f_discount');
-    if(needInfo === 'Yes'){
+
+    if(needInfo === 'rsl_only'){
       resolution = 'need info';
       touch = touchNote('Item is in unsellable condition', orderId,
-        'Verified order details in Seller Center // Checked return reason and return status // checked attachments // images of damaged item blurred or not provided // RSL blurred or not clear // unable to validate claim',
+        'Verified order details in Seller Center // Checked return reason and return status // checked attachments // Return Shipping Label (RSL) incomplete or unclear // unable to validate claim',
+        'Return Shipping Label (RSL)', 'Need Info');
+      email = `Hello ${sellerName},\n\nThank you for your response and for providing additional details related to your reimbursement request.\n\nHowever, we are currently unable to validate the return shipment because the shipping label provided is incomplete or unclear. To proceed with our investigation, we kindly request that you provide a clear and valid image of the Return Shipping Label (RSL).\n\nThe shipping label should clearly display the following information:\n\n* RMA (Return Merchandise Authorization) number\n* Order details\n* Tracking number\n\nThis information is required to accurately verify that the returned package corresponds to the order under review and to continue processing your reimbursement request.\n\nAt this time, we are placing this case in Need Info status. Please reply to this email with the requested shipping label within five (5) days. If no response is received within this timeframe, the case will automatically close, and no further action can be taken.\n\nWe appreciate your cooperation and look forward to your response.\n\nBest Regards,\nShivam\nWalmart Seller Support`;
+    } else if(needInfo === 'damaged_used_item'){
+      resolution = 'need info';
+      touch = touchNote('Item is in unsellable condition', orderId,
+        'Verified order details in Seller Center // Checked return reason and return status // checked attachments // images of damaged/used item not provided or unclear // unable to validate claim',
+        'Images of damaged/used item', 'Need Info');
+      email = `Hello ${sellerName},\n\nThank you for contacting Walmart Seller Support. My name is Shivam, and I am assisting you with your reimbursement request.\n\nAfter reviewing your case, we require some additional information to continue our investigation and accurately validate your claim.\n\n• Kindly provide clear, high-resolution images of the returned item that clearly demonstrate its current condition. Please ensure the photos capture all visible damage, signs of use, defects, or any other issues that make the item unsellable. We recommend including images from multiple angles, along with close-up photos of the damaged or used areas, so our team can perform a thorough assessment.\n\nOnce we receive the requested documentation, we will promptly continue evaluating your reimbursement request and provide you with the next update as soon as possible.\n\nAt this time, we are placing this case in Need Info status. If no response is received within five days, the case will automatically close. However, you may reopen the case by replying to this email with the requested information.\n\nThank you for your cooperation and understanding. We look forward to receiving the requested images so we can proceed with the review.\n\nBest Regards,\nShivam\nWalmart Seller Support`;
+    } else if(needInfo === 'original_packaging'){
+      resolution = 'need info';
+      touch = touchNote('Item is in unsellable condition', orderId,
+        'Verified order details in Seller Center // Checked return reason and return status // checked attachments // images of original packaging not provided or unclear // unable to validate claim',
+        'Images of original packaging', 'Need Info');
+      email = `Hello ${sellerName},\n\nThank you for contacting Walmart Seller Support. My name is Shivam, and I am assisting you with your reimbursement request.\n\nAfter reviewing your case, we require additional documentation to continue our investigation and accurately validate your claim.\n\n• Kindly provide clear, high-resolution images of the item's original packaging that clearly demonstrate its current condition. If the original packaging is damaged, please ensure the photos clearly capture all visible damage from multiple angles. If the original packaging is missing, please provide clear images of the item as received along with any available shipping or replacement packaging to help verify the absence of the original packaging.\n\nThese images are necessary for our team to assess the condition of the returned item and determine eligibility for reimbursement in accordance with Walmart's reimbursement guidelines.\n\nOnce we receive the requested documentation, we will promptly continue reviewing your reimbursement request and provide you with the next update as soon as possible.\n\nAt this time, we are placing this case in Need Info status. If no response is received within five days, the case will automatically close. However, you may reopen the case by replying to this email with the requested information.\n\nThank you for your cooperation and understanding. We look forward to receiving the requested documentation so we can proceed with our review.\n\nBest Regards,\nShivam\nWalmart Seller Support`;
+    } else if(needInfo === 'both'){
+      resolution = 'need info';
+      touch = touchNote('Item is in unsellable condition', orderId,
+        'Verified order details in Seller Center // Checked return reason and return status // checked attachments // images of damaged item and Return Shipping Label (RSL) not provided or unclear // unable to validate claim',
         'Images of returned item and Return Shipping Label (RSL)', 'Need Info');
-      email = needInfoImagesEmail(sellerName);
+      email = `Hello ${sellerName},\n\nThank you for contacting Walmart Seller Support.\n\nMy name is Shivam, and I am assisting you with your reimbursement request.\nAfter reviewing your case, we require additional documentation to continue our investigation and accurately validate your claim.\n\nTo proceed with the review, kindly provide the following:\n\n* Clear, high-resolution images of the returned item showing its current condition. Please ensure the photos clearly capture all visible damage, signs of use, or defects from multiple angles, including close-up images of the affected areas.\n* A clear and legible image of the Return Shipping Label (RSL). The label must clearly display the RMA number, order details, and tracking information so we can verify that the returned item corresponds to the correct order.\n\nThe requested documentation is necessary for us to validate your reimbursement request and complete a thorough review.\n\nOnce we receive the requested information, we will promptly continue evaluating your claim and provide you with an update as soon as possible.\n\nAt this time, we are placing this case in Need Info status. If no response is received within five days, the case will automatically close. However, you may reopen the case at any time by replying to this email with the requested documentation.\n\nThank you for your cooperation and understanding. We appreciate your prompt response and look forward to assisting you further.\n\nBest Regards,\nShivam\nWalmart Seller Support`;
     } else {
       resolution = 'approved';
       const pct = discount ? `${discount}%` : '100%';
       touch = touchNote('Item is in unsellable condition', orderId,
         `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // ${pct} approval // checked attachments // verified return shipping label // validated eligibility based on policy guidelines`,
-        'NA', `Approved — ${pct} of item price`);
+        'NA', `Approved — ${pct} of customer refund`);
       email = approvedEmail(sellerName, orderId, amount);
     }
   }
@@ -810,6 +960,20 @@ function generate(){
       touch = touchNote(label, orderId, 'Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // validated eligibility based on policy guidelines', 'NA', 'Approved — claim eligible under policy');
       email = approvedEmail(sellerName, orderId, amount);
     }
+  }
+
+  else if(cat === 'cc_should_not_refund'){
+    resolution = 'approved';
+    const overrideChecked = document.getElementById('f_ccOverrideFileChecked').checked;
+    const restricted = document.getElementById('f_ccItemRestricted').checked;
+    const qualityResponse = document.getElementById('f_ccQualityResponse').checked;
+    let steps = 'Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab';
+    if(overrideChecked) steps += ` // checked return override file ${formatTodayLong()}`;
+    if(restricted) steps += ' // item is restricted for return';
+    if(qualityResponse) steps += ' // seller provided quality response';
+    steps += ' // validated eligibility based on policy guidelines';
+    touch = touchNote('Customer Care should not have authorized the refund', orderId, steps, 'NA', 'Approved — claim eligible under policy');
+    email = approvedEmail(sellerName, orderId, amount);
   }
 
   else if(cat === 'something_not_listed'){
