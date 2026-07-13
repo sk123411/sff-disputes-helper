@@ -371,6 +371,21 @@
           </label>
         </div>
 
+        <label style="display:flex; align-items:center; gap:9px; margin-top:20px; cursor:pointer;">
+          <input type="checkbox" id="arrivedLateToggle" onchange="toggleArrivedLate()" style="width:auto; accent-color:var(--amber); cursor:pointer;">
+          <span style="color:var(--ink); font-size:13px;">Arrived late (shipped/delivered outside required timeline)</span>
+        </label>
+        <div id="arrivedLateBox" style="display:none;">
+          <div class="row2">
+            <div><label>Estimated Ship Date</label><input type="date" id="f_estimatedShipDate"></div>
+            <div><label>Actual Ship Date</label><input type="date" id="f_actualShipDate"></div>
+          </div>
+          <div class="row2">
+            <div><label>Estimated Delivery Date</label><input type="date" id="f_estimatedDeliveryDate"></div>
+            <div><label>Actual Delivery Date</label><input type="date" id="f_actualDeliveryDate"></div>
+          </div>
+        </div>
+
         <div id="dynamicFields"></div>
       </div>
 
@@ -456,7 +471,14 @@ const FIELD_SETS = {
           <option value="">— select —</option>
           <option value="Yes">Yes</option>
           <option value="No">No</option>
+          <option value="Expected">Is order expected to deliver to customer (still in transit)</option>
         </select>
+        <div class="row2">
+          <div><label>Last tracking update date</label><input type="date" id="f_dtcLastUpdate"></div>
+          <div><label>Expected delivery date</label><input type="date" id="f_dtcExpectedDelivery"></div>
+        </div>
+        <label>Customer delivery address</label>
+        <input type="text" id="f_dtcAddress" placeholder="e.g. Dayton, NJ">
         <label>Is POD (proof of delivery) verified?</label>
         <select id="f_podVerified">
           <option value="">Not applicable</option>
@@ -659,6 +681,11 @@ function toggleLostInTransitDate(){
   box.style.display = document.getElementById('f_lostInTransit').checked ? 'block' : 'none';
 }
 
+function toggleArrivedLate(){
+  const on = document.getElementById('arrivedLateToggle').checked;
+  document.getElementById('arrivedLateBox').style.display = on ? 'block' : 'none';
+}
+
 function toggleCategoryUpdate(){
   const on = document.getElementById('categoryUpdateToggle').checked;
   document.getElementById('categoryUpdateBox').style.display = on ? 'block' : 'none';
@@ -695,7 +722,25 @@ function signBlock(){
 
 // ---------- generation ----------
 function generate(){
-  const orderIdRaw = ph(val('orderId'), '*(order id)');
+  const sellerName = ph(val('sellerName'), '*(Seller Name)');
+  const orderId = ph(val('orderId'), '*(order id)');
+  const trackingNumber = ph(val('trackingNumber'), '*(tracking number)');
+  const amount = money(val('amount'));
+
+  if(document.getElementById('arrivedLateToggle').checked){
+    const estShip = ph(fmtDate(val('f_estimatedShipDate')), '*(estimated ship date)');
+    const actShip = ph(fmtDate(val('f_actualShipDate')), '*(actual ship date)');
+    const estDelivery = ph(fmtDate(val('f_estimatedDeliveryDate')), '*(estimated delivery date)');
+    const actDelivery = ph(fmtDate(val('f_actualDeliveryDate')), '*(actual delivery date)');
+    const catSel = document.getElementById('category');
+    const currentCategoryName = (catSel.value && catSel.selectedOptions[0]) ? catSel.selectedOptions[0].text : 'Arrived late';
+    const touch = touchNote(currentCategoryName, orderId,
+      'Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // return reason is arrived late // order is shipped and delivered late // hence rejected',
+      'NA', 'Rejected');
+    const email = `Hello ${sellerName},\n\nThank you for contacting Walmart Seller Support. My name is Shivam, and I appreciate the opportunity to assist you.\n\nUpon reviewing your case details and the shipment tracking information for ${trackingNumber}, we found that the order did not meet Walmart's required shipping and delivery timeline.\n\nOur review indicates the following:\nEstimated Ship Date: ${estShip}\nActual Ship Date: ${actShip}\nEstimated Delivery Date: ${estDelivery}\nActual Delivery Date: ${actDelivery}\n\nAs the order was both shipped and delivered outside the required timeline, it does not qualify for reimbursement under Walmart Marketplace policy.\n\nTherefore, we are unable to proceed with your reimbursement request.\nWe understand this may not be the outcome you were expecting, and we appreciate your understanding.\n\nIf you have any additional questions or believe there is any new information that may impact this decision, please reply to this email, and we will be happy to review it further.\nThank you for contacting Walmart Seller Support, and we wish you a great day ahead.\n\nBest regards,\nShivam\nWalmart Seller Support`;
+    renderOutput('reject', touch, email);
+    return;
+  }
 
   if(document.getElementById('categoryUpdateToggle').checked){
     const target = document.getElementById('categoryUpdateTarget').value;
@@ -710,18 +755,13 @@ function generate(){
     const resolutionLine = useReturnRefundLine
       ? `Upon reviewing the return and refunds tab under seller center, I found that the return reason is listed as "${foundReasonRaw}." Based on the workflow guidelines, the category has been updated to "${target}."`
       : `Upon reviewing the case details, description and other details, the category has been updated to "${target}."`;
-    const touch = `Touch #: 01\n· Current Issue Synopsis/ Overview: ${currentCategoryName}\n· Order #s/ Item IDs/ Feed IDs: ${orderIdRaw}\n· Troubleshooting Steps Provided: checked case description // checked seller center // checked payments\n· Information Requested: N/A\n· Proposed Resolution Path: ${resolutionLine}${trackingLine}\n· Relevant Internal/ External Articles: 7969 // 4926 // 10046\n· Additional Notes/Comments: N/A\n· Jira Link: N/A`;
+    const touch = `Touch #: 01\n· Current Issue Synopsis/ Overview: ${currentCategoryName}\n· Order #s/ Item IDs/ Feed IDs: ${orderId}\n· Troubleshooting Steps Provided: checked case description // checked seller center // checked payments\n· Information Requested: N/A\n· Proposed Resolution Path: ${resolutionLine}${trackingLine}\n· Relevant Internal/ External Articles: 7969 // 4926 // 10046\n· Additional Notes/Comments: N/A\n· Jira Link: N/A`;
     renderOutput('category updated', touch, null);
     return;
   }
 
   const cat = document.getElementById('category').value;
   if(!cat){ alert('Pick a category first.'); return; }
-
-  const sellerName = ph(val('sellerName'), '*(Seller Name)');
-  const orderId = ph(val('orderId'), '*(order id)');
-  const trackingNumber = ph(val('trackingNumber'), '*(tracking number)');
-  const amount = money(val('amount'));
 
   let resolution = 'approved';
   let touch = '';
@@ -794,7 +834,7 @@ function generate(){
       touch = touchNote('Seller reported that the return package was not delivered back.', orderId,
         `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // order is still in transit // last tracking update on ${lastUpdate} (within 48 hours) // hence rejected`,
         'NA', 'Rejected');
-      email = `Hello ${sellerName},\n\nMy name is Shivam from Walmart Seller Support. I hope you're doing well. I'm happy to assist you with your concern.\n\nI understand your concern regarding the return shipment and appreciate your patience.\n\nUpon reviewing the case details, I found that the return tracking number ${trackingNumber} indicates that the package is still in transit to your return address. Additionally, the latest tracking update was recorded on ${lastUpdate} which is within the last 48 hours, confirming that the shipment is still actively moving through the carrier's network.\n\nAt this time, I kindly request that you wait for the return package to be delivered. Since the return shipment is still in transit and has not yet been delivered, we are unable to proceed with the reimbursement request at this time.\n\nIf the package is not delivered after a reasonable period or if the tracking stops updating, please reply to this email with the latest details, and we will be happy to review the case further.\n\nIf you have any additional questions or concerns, please feel free to reply to this email or comment on the case.\n\nWarm regards,\nShivam\nWalmart Seller Support`;
+      email = `Hello ${sellerName},\n\nMy name is Shivam from Walmart Seller Support. I hope you're doing well. I'm happy to assist you with your concern.\n\nI understand your concern regarding the return shipment and appreciate your patience.\n\nUpon reviewing the case details, I found that the return tracking number ${trackingNumber} indicates that the package is still in transit to your return address in ${returnAddress}. Additionally, the latest tracking update was recorded on ${lastUpdate} which is within the last 48 hours, confirming that the shipment is still actively moving through the carrier's network.\n\nAt this time, I kindly request that you wait for the return package to be delivered. Since the return shipment is still in transit and has not yet been delivered, we are unable to proceed with the reimbursement request at this time.\n\nIf the package is not delivered after a reasonable period or if the tracking stops updating, please reply to this email with the latest details, and we will be happy to review the case further.\n\nIf you have any additional questions or concerns, please feel free to reply to this email or comment on the case.\n\nWarm regards,\nShivam\nWalmart Seller Support`;
     } else {
       resolution = 'approved';
       touch = touchNote('Seller reported that the return package was not delivered back.', orderId,
@@ -824,6 +864,15 @@ function generate(){
         `Verified order details in Seller Center // Checked return reason (${reason}) and return status // Reviewed customer refund details under the Transactions tab // order is lost in transit // last tracking update on ${lastUpdateDate} // hence rejected`,
         'NA', 'Rejected — lost in transit');
       email = `Hello ${sellerName},\n\nThank you for reaching out to Walmart Seller Support. My name is Shivam, and I'm happy to assist you.\n\nI understand your concern regarding the shipment associated with tracking number ${trackingNumber}.\n\nUpon reviewing the tracking details, I found that the last tracking update was recorded on ${lastUpdateDate}. Since there have been no further tracking scans or movement after that date, the shipment is considered lost in transit.\n\nAs the order was never delivered to the customer and we are unable to verify successful delivery, we kindly request that you file a claim directly with the carrier for further investigation and any applicable reimbursement, as the carrier is best positioned to investigate shipments that are lost in transit.\n\nIf you have any additional questions or concerns regarding this matter, please reply to this email within five days before the case closes.\n\nWarm regards,\nShivam\nWalmart Seller Support`;
+    } else if(delivered === 'Expected'){
+      resolution = 'notified';
+      const dtcLastUpdate = ph(fmtDate(val('f_dtcLastUpdate')), '*(last tracking update date)');
+      const dtcExpected = ph(fmtDate(val('f_dtcExpectedDelivery')), '*(expected delivery date)');
+      const dtcAddress = ph(val('f_dtcAddress'), '*(customer delivery address)');
+      touch = touchNote('The item was delivered to the customer', orderId,
+        `Verified order details in Seller Center // Checked return reason (${reason}) and return status // Reviewed customer refund details under the Transactions tab // order is in transit // order is expected to deliver to customer // hence notified the seller`,
+        'NA', 'Notified seller — order in transit, awaiting delivery');
+      email = `Hello ${sellerName},\n\nThank you for reaching out to Walmart Seller Support. My name is Shivam, and I'm happy to assist you.\n\nI understand your concern regarding the shipment associated with tracking number ${trackingNumber}.\n\nUpon reviewing the tracking details, I found that the last tracking update was recorded on ${dtcLastUpdate}. The shipment is still in transit, and the carrier's estimated delivery date is ${dtcExpected}, to the customer in ${dtcAddress}.\n\nAt this time, we kindly request that you wait until ${dtcExpected}, for the shipment to be delivered. Once the tracking confirms successful delivery to the customer, you may open a reimbursement case if you still require assistance. We will then be in a better position to review your request and assist you with the reimbursement process.\n\nIf you have any additional questions or concerns regarding this matter, please reply to this email within five days before the case closes.\n\nWarm regards,\nShivam\nWalmart Seller Support`;
     } else if(delivered === 'No'){
       resolution = 'reject';
       touch = touchNote('The item was delivered to the customer', orderId,
@@ -873,7 +922,7 @@ function generate(){
       const pct = discount ? `${discount}%` : '100%';
       touch = touchNote('Item is in unsellable condition', orderId,
         `Verified order details in Seller Center // Checked return reason and return status // Reviewed customer refund details under the Transactions tab // ${pct} approval // checked attachments // verified return shipping label // validated eligibility based on policy guidelines`,
-        'NA', `Approved — ${pct} of customer refund`);
+        'NA', `Approved — ${pct} of item price`);
       email = approvedEmail(sellerName, orderId, amount);
     }
   }
